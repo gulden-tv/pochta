@@ -454,7 +454,7 @@ function readDbfLastUpdateDate(string $data): string
     }
 
     // В DBF дата последнего обновления лежит в байтах 1,2,3:
-    // год от 1900, месяц, день. Спасибо древним форматам за квест.
+    // год от 1900, месяц, день.
     $year = ord($data[1]) + 1900;
     $month = ord($data[2]);
     $day = ord($data[3]);
@@ -737,17 +737,17 @@ function main(): void
     echo "Готово.\n";
     echo "Файл: " . CSV_PATH . "\n";
     echo "Строк: " . $result['written'] . "\n";
-    echo "Дата архива на странице  Почты: " . ($pageArchiveDate !== '' ? $pageArchiveDate : 'не найдена') . "\n";
+    echo "Дата архива на странице Почты: " . ($pageArchiveDate !== '' ? $pageArchiveDate : 'не найдена') . "\n";
     echo "Дата обновления внутри DBF: " . ($result['dbf_last_update_date'] !== '' ? $result['dbf_last_update_date'] : 'не найдена') . "\n";
 
     if (!empty($result['missing_timezone_regions'])) {
         echo "\nРегионы, по которым не найдена таймзона:\n";
 
         foreach ($result['missing_timezone_regions'] as $region => $count) {
-            echo "- {$region}: {$count} строк\n";
+            echo "- '{$region}': найдено {$count} строк\n";
         }
     } else {
-        echo "\nТаймзона найдена для всех непустых регионов. Чудо, но задокументируем.\n";
+        echo "\nТаймзона найдена для всех непустых регионов.\n";
     }
 }
 
