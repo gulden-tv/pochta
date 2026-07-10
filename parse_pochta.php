@@ -676,6 +676,8 @@ const INDEX_PREFIX_REGIONS = [
     '693' => 'Сахалинская область',
     '694' => 'Сахалинская область',
 
+    '996' => 'Ханты-Мансийский автономный округ - Югра',
+
     // Новые территории, если такие индексы попадутся
     '269' => 'Запорожская область',
     '270' => 'Запорожская область',
@@ -885,7 +887,7 @@ function strContainsMb(string $haystack, string $needle): bool
     return stripos($haystack, $needle) !== false;
 }
 
-function detectTimezone(string $region): string
+function detectTimezoneByRegion(string $region): string
 {
     $regionLower = mb_strtolower(trim($region), 'UTF-8');
 
@@ -904,6 +906,34 @@ function detectTimezone(string $region): string
     }
 
     return '';
+}
+
+function detectRegionByIndexPrefix(string $postalIndex): string
+{
+    $prefix = substr(trim($postalIndex), 0, 3);
+
+    if ($prefix === '') {
+        return '';
+    }
+
+    return INDEX_PREFIX_REGIONS[$prefix] ?? '';
+}
+
+function detectTimezone(string $region, string $postalIndex): string
+{
+    $timezone = detectTimezoneByRegion($region);
+
+    if ($timezone !== '') {
+        return $timezone;
+    }
+
+    $regionByIndex = detectRegionByIndexPrefix($postalIndex);
+
+    if ($regionByIndex === '') {
+        return '';
+    }
+
+    return detectTimezoneByRegion($regionByIndex);
 }
 
 function normalizeFieldName(string $name): string
@@ -1102,7 +1132,7 @@ function parseDbfToCsv(string $dbfPath, string $csvPath): array
         $postalIndex = getField($row, 'INDEX');
         $region = getField($row, 'REGION');
         $settlement = detectSettlement($row);
-        $timezone = detectTimezone($region);
+        $timezone = detectTimezone($region, $postalIndex);
 
         if ($timezone === '') {
             addMissingTimezone($missingTimezoneRegions, $region, $postalIndex);
