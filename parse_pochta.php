@@ -209,7 +209,7 @@ const REGION_TIMEZONES = [
     'Ульяновская' => '+4',
 
     // UTC+5
-    // 'Байконур' => '+5', // проверка что не найдено таймзона
+    // 'Байконур' => '+5', // проверка что не найдено таймзона для наглядности
 
     'Республика Башкортостан' => '+5',
     'Башкортостан' => '+5',
@@ -684,7 +684,7 @@ const INDEX_PREFIX_REGIONS = [
     '693' => 'Сахалинская область',
     '694' => 'Сахалинская область',
 
-    '996' => 'Ханты-Мансийский автономный округ - Югра',
+    // 996xxx часто служебные почта индексы. Не маппим весь префикс глобально.
 
     // Новые территории, если такие индексы попадутся
     '269' => 'Запорожская область',
@@ -918,16 +918,31 @@ function detectTimezoneByRegion(string $region): string
 
 function detectRegionByIndexPrefix(string $postalIndex): string
 {
-    $prefix = substr(trim($postalIndex), 0, 3);
+    $postalIndex = preg_replace('/\D+/', '', $postalIndex);
 
-    if ($prefix === '') {
+    if (strlen($postalIndex) < 3) {
         return '';
     }
+
+    $prefix = substr($postalIndex, 0, 3);
 
     return INDEX_PREFIX_REGIONS[$prefix] ?? '';
 }
 
-function detectTimezone(string $region, string $postalIndex): string
+function detectRegionByIndexOrSubm(string $postalIndex, string $opsSubm = ''): string
+{
+    // Для почтоматов/служебных индексов вида 9xxxxx регион по самому индексу часто неверный.
+    // Поэтому сначала смотрим индекс подчиненного/головного ОПС, например 996651 -> OPSSUBM 628700 -> ХМАО.
+    $regionBySubm = detectRegionByIndexPrefix($opsSubm);
+
+    if ($regionBySubm !== '') {
+        return $regionBySubm;
+    }
+
+    return detectRegionByIndexPrefix($postalIndex);
+}
+
+function detectTimezone(string $region, string $postalIndex, string $opsSubm = ''): string
 {
     $timezone = detectTimezoneByRegion($region);
 
@@ -935,7 +950,7 @@ function detectTimezone(string $region, string $postalIndex): string
         return $timezone;
     }
 
-    $regionByIndex = detectRegionByIndexPrefix($postalIndex);
+    $regionByIndex = detectRegionByIndexOrSubm($postalIndex, $opsSubm);
 
     if ($regionByIndex === '') {
         return '';
@@ -1138,9 +1153,15 @@ function parseDbfToCsv(string $dbfPath, string $csvPath): array
         }
 
         $postalIndex = getField($row, 'INDEX');
+        $opsSubm = getField($row, 'OPSSUBM');
         $region = getField($row, 'REGION');
+
+        if ($region === '') {
+            $region = detectRegionByIndexOrSubm($postalIndex, $opsSubm);
+        }
+
         $settlement = detectSettlement($row);
-        $timezone = detectTimezone($region, $postalIndex);
+        $timezone = detectTimezone($region, $postalIndex, $opsSubm);
 
         if ($timezone === '') {
             addMissingTimezone($missingTimezoneRegions, $region, $postalIndex);
