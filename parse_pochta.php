@@ -136,6 +136,26 @@ function downloadPage(string $url): string
     return $html;
 }
 
+
+function extractArchiveDateFromPage(string $html): string
+{
+    // Ищем дату на странице рядом с описанием архива. 
+    // вариант около слов "сформирован", "обновлен", "архив".
+    $patterns = [
+        '~(?:сформирован|сформирована|обновлен|обновлена|актуал[ьи]зирован|архив)[^0-9]{0,120}(\d{2}\.\d{2}\.\d{4})~iu',
+        '~(\d{2}\.\d{2}\.\d{4})[^<]{0,120}(?:сформирован|сформирована|обновлен|обновлена|актуал[ьи]зирован|архив)~iu',
+        '~(\d{4}-\d{2}-\d{2})~u',
+    ];
+
+    foreach ($patterns as $pattern) {
+        if (preg_match($pattern, $html, $match)) {
+            return $match[1];
+        }
+    }
+
+    return '';
+}
+
 function startsWith(string $haystack, string $needle): bool
 {
     return substr($haystack, 0, strlen($needle)) === $needle;
@@ -238,6 +258,26 @@ function readUInt32(string $data, int $offset): int
     return unpack('V', $part)[1];
 }
 
+
+function readDbfLastUpdateDate(string $data): string
+{
+    if (strlen($data) < 4) {
+        return '';
+    }
+
+    // В DBF дата последнего обновления лежит в байтах 1,2,3:
+    // год от 1900, месяц, день. Спасибо древним форматам за квест.
+    $year = ord($data[1]) + 1900;
+    $month = ord($data[2]);
+    $day = ord($data[3]);
+
+    if (!checkdate($month, $day, $year)) {
+        return '';
+    }
+
+    return sprintf('%04d-%02d-%02d', $year, $month, $day);
+}
+
 function decodeDbfString(string $value): string
 {
     $value = trim($value);
@@ -246,7 +286,7 @@ function decodeDbfString(string $value): string
         return '';
     }
 
-    // У Почты обычно CP866
+    // У Почты обычно CP866. Если внезапно будет другая кодировка, это место первое под подозрением.
     $converted = iconv('CP866', 'UTF-8//IGNORE', $value);
 
     return $converted !== false ? trim($converted) : trim($value);
@@ -263,12 +303,8 @@ function strContainsMb(string $haystack, string $needle): bool
 
 function detectTimezone(string $region): string
 {
-    $regionLower = mb_strtolower(trim($region), 'UTF-8');
-
     foreach (REGION_TIMEZONES as $part => $timezone) {
-        $partLower = mb_strtolower(trim($part), 'UTF-8');
-
-        if (mb_strpos($regionLower, $partLower, 0, 'UTF-8') !== false) {
+        if (strContainsMb($region, $part)) {
             return $timezone;
         }
     }
@@ -328,6 +364,7 @@ function parseDbfToCsv(string $dbfPath, string $csvPath): array
     $recordsCount = readUInt32($data, 4);
     $headerLength = readUInt16($data, 8);
     $recordLength = readUInt16($data, 10);
+    $dbfLastUpdateDate = readDbfLastUpdateDate($data);
 
     if ($headerLength <= 32 || $recordLength <= 1) {
         throw new RuntimeException("Странный DBF headerLength={$headerLength}, recordLength={$recordLength}");
@@ -369,7 +406,7 @@ function parseDbfToCsv(string $dbfPath, string $csvPath): array
     }
 
     if (DEBUG) {
-        echo "DBF: records={$recordsCount}, headerLength={$headerLength}, recordLength={$recordLength}\n";
+        echo "DBF: records={$recordsCount}, headerLength={$headerLength}, recordLength={$recordLength}, lastUpdate={$dbfLastUpdateDate}\n";
         echo "Поля DBF:\n";
         foreach ($fields as $field) {
             echo "- {$field['name']} | type={$field['type']} | length={$field['length']}\n";
@@ -466,6 +503,7 @@ function parseDbfToCsv(string $dbfPath, string $csvPath): array
 
     return [
         'written' => $written,
+        'dbf_last_update_date' => $dbfLastUpdateDate,
         'missing_timezone_regions' => $missingTimezoneRegions,
     ];
 }
@@ -486,6 +524,13 @@ function main(): void
 
     echo "Скачиваю страницу Почты...\n";
     $html = downloadPage(SOURCE_URL);
+    $pageArchiveDate = extractArchiveDateFromPage($html);
+
+    if ($pageArchiveDate !== '') {
+        echo "Дата архива на странице Почты: {$pageArchiveDate}\n";
+    } else {
+        echo "Дата архива на странице Почты: не найдена\n";
+    }
 
     echo "Ищу ссылку на архив...\n";
     $zipUrl = findZipUrl($html);
@@ -504,6 +549,8 @@ function main(): void
     echo "Готово.\n";
     echo "Файл: " . CSV_PATH . "\n";
     echo "Строк: " . $result['written'] . "\n";
+    echo "Дата архива на странице  Почты: " . ($pageArchiveDate !== '' ? $pageArchiveDate : 'не найдена') . "\n";
+    echo "Дата обновления внутри DBF: " . ($result['dbf_last_update_date'] !== '' ? $result['dbf_last_update_date'] : 'не найдена') . "\n";
 
     if (!empty($result['missing_timezone_regions'])) {
         echo "\nРегионы, по которым не найдена таймзона:\n";
@@ -512,7 +559,7 @@ function main(): void
             echo "- {$region}: {$count}\n";
         }
     } else {
-        echo "\nТаймзона найдена для всех непустых регионов.\n";
+        echo "\nТаймзона найдена для всех непустых регионов. Чудо, но задокументируем.\n";
     }
 }
 
